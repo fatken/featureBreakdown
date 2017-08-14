@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title></title>
+  <style type="text/css">
+    .rect {
+      stroke: white;
+      opacity: 0.8;
+    }
+
+    .rectHovered {
+      opacity: 1;
+    }
+
+    .genreText {
+      font-family: sans-serif;
+      font-size: 16px;
+      fill: black;
+      opacity: 0.6;
+    }
+
+    .tooltip {
+      font-family: sans-serif;
+      font-size: 14px;
+      max-width: 300px;
+      padding: 10px 20px;
+      display: block;
+      height: auto;
+      position: absolute;
+      text-align: center;
+      border-style: solid;
+      border-width: 1px;
+      background-color: #F0F8FF;
+      color: black;
+    }
+
+    .tooltip p {
+      color: #1E824C;
+    }
+  </style>
+</head>
+
+<body>
+  <div id='treemap'></div>
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <script type="text/javascript">
+    var width = 1000,
+      height = 500;
+    var nodesT;
+
+    //basic setup
+    var svg = d3.select('#treemap')
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height);
+
+    //two layers, 1 layer for displaying nodes, layer2 for displaying genreNode text
+    var layer1 = svg.append('g');
+    var layer2 = svg.append('g');
+
+
+    //layout
+    var treemap = d3.layout.treemap()
+      .size([width, height])
+      .padding(1)
+      .value(function(d) {
+        return d.value;
+      });
+
+	//read in json
+    d3.json('treemapNodes.json', function(error, root) {
+      if (error) throw error;
+
+      var nodes = treemap.nodes(root);
+
+      //leaf node value list
+      var valueDict = {};
+      var categoryList = [];
+      for (i = 0; i < nodes.length; i++) {
+        if (nodes[i].depth == 2) {
+          if (nodes[i].parent.name in valueDict) {
+            valueDict[nodes[i].parent.name].push(nodes[i].value);
+          } else {
+            valueDict[nodes[i].parent.name] = [nodes[i].value];
+            categoryList.push(nodes[i].parent.name);
+          }
+        }
+      }
+
+	  //creating dictionary containing the domain of values
+      var domainDict = {};
+      for (i in categoryList) {
+        domainDict[categoryList[i]] = [valueDict[categoryList[i]][0], valueDict[categoryList[i]][0]];
+        for (j = 1; j < valueDict[categoryList[i]].length; j++) {
+          if (valueDict[categoryList[i]][j] < domainDict[categoryList[i]][0]) {
+            domainDict[categoryList[i]][0] = valueDict[categoryList[i]][j];
+          } else if (valueDict[categoryList[i]][j] > domainDict[categoryList[i]][1]) {
+            domainDict[categoryList[i]][1] = valueDict[categoryList[i]][j];
+          }
+        }
+      }
+
+	  //scaling function definition
+      function scaleLightness(domainElement, value) {
+        if (domainElement[0] == domainElement[1]) {
+          return 45;
+        } else {
+          return 100 - ((value - domainElement[0]) / (domainElement[1] - domainElement[0]) / 2 + 0.20) * 100;
+        }
+      }
+
+      //red 0
+      //green lawn 90
+      //green 120
+      //inchworm 84
+      //azure 210
+      //cyan 180
+      //magenta 300
+      //orange 65, 30
+      //brown 38, 30
+
+      var colors = ['hsla(0, 100%, ', 'hsla(210, 100%, ', 'hsla(120, 100%, ', 'hsla(337, 100%, ', 'hsla(300, 100%, ', 'hsla(180, 100%, ', 'hsla(24, 100%, ', 'hsla(80, 100%, ', 'hsla(60, 100%, '];
+	  
+	  //object containing rectangle colors
+      var rectColors = {};
+      for (i in categoryList) {
+        rectColors[categoryList[i]] = colors[i];
+      }
+
+      nodesT = nodes;
+      //linksT = links;
+
+	  //appending game nodes 
+      var node = layer1.selectAll('g')
+        .data(nodes.filter(function(d) {
+          return d.parent && d.value != 0; //filter out first level node and second  layer nodes
+        }))
+        .enter()
+        .append('g');
+		
+	  //appending genre nodes
+      var genreNode = layer2.selectAll('g')
+        .data(nodes.filter(function(d) {
+          return d.parent && d.children; //filter out first level node and second  layer nodes
+        }))
+        .enter()
+        .append('g');
+
+	  //appending game node rectangles
+      var rect = node.append('rect')
+        .attr('class', 'rect')
+        .attr('x', function(d) {
+          return d.x;
+        })
+        .attr('y', function(d) {
+          return d.y;
+        })
+        .attr('width', function(d) {
+          return d.dx;
+        })
+        .attr('height', function(d) {
+          return d.dy;
+        })
+        .style('fill', function(d) {
+          if (!d.children) {
+            var colStr = rectColors[d.parent.name] + scaleLightness(domainDict[d.parent.name], d.value) + '%, 1)';
+            return colStr;
+          } else {
+            return 'white';
+          }
+        });
+
+	  //appending genre node names
+      var genreText = genreNode.append('text')
+        .attr('class', 'genreText')
+        //.style('width', function(d){return d.dx;})
+        .attr('text-anchor', 'end')
+        .attr('x', function(d) {
+          return d.x + d.dx - 5
+        })
+        .attr('y', function(d) {
+          return d.y + d.dy - 5
+        })
+        .text(function(d) {
+          return d.children ? d.name : null;
+        });
+
+	  //tooltip interactivity
+      var tooltip = d3.select('#treemap')
+        .append('div')
+        .attr('class', 'tooltip')
+        .style('opacity', 0.0);
+
+      node.on('mouseover', function(d) {
+          if (!d.children) {
+            rect.classed('rectHovered', function(l) {
+              if (l.name == d.name) {
+                return true;
+              }
+            })
+            tooltip.html(d.name + '<br/>' + "<p style=color :red>" + d.choice + '</p>')
+              .style('left', (d3.event.pageX) + 'px')
+              .style('top', (d3.event.pageY + 20) + 'px')
+              .style('opacity', 1.0);
+          }
+        })
+        .on('mousemove', function(d) {
+          tooltip.style('left', (d3.event.pageX) + 'px')
+            .style('top', (d3.event.pageY + 20) + 'px')
+        })
+        .on('mouseout', function(d) {
+          tooltip.style('opacity', 0.0)
+          rect.classed('rectHovered', false);
+        })
+    })
+  </script>
+</body>
+
+</html>
